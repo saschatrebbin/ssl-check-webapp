@@ -1,0 +1,18 @@
+services:
+  ssl-checker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ssl-checker:latest
+    container_name: ssl-checker
+    restart: unless-stopped
+    ports:
+      - "8080"
+    volumes:
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1

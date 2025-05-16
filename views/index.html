@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSL-Zertifikat Checker</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SSL-Zertifikat Checker</h1>
+            <p>Überprüfen Sie die SSL-Zertifikate Ihrer Webseiten</p>
+        </header>
+
+        <section class="input-section">
+            <form id="check-form">
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="url-input" 
+                        placeholder="Geben Sie eine URL ein (z.B. example.com oder https://example.com)" 
+                        required
+                    >
+                    <button type="submit" id="check-button">Prüfen</button>
+                </div>
+            </form>
+        </section>
+
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <p>Überprüfe SSL-Zertifikat...</p>
+        </div>
+
+        <section id="result-container" class="hidden">
+            <h2>Prüfungsergebnis</h2>
+            
+            <div class="result-header">
+                <div id="result-url" class="info-item"></div>
+                <div id="result-timestamp" class="timestamp"></div>
+            </div>
+            
+            <div class="result-grid">
+                <div class="result-section">
+                    <h3>Grundinformationen</h3>
+                    <div class="info-group">
+                        <div class="label">Hostname:</div>
+                        <div id="result-hostname" class="value"></div>
+                    </div>
+                    <div class="info-group">
+                        <div class="label">Port:</div>
+                        <div id="result-port" class="value"></div>
+                    </div>
+                </div>
+                
+                <div class="result-section">
+                    <h3>Zertifikatsinformationen</h3>
+                    <div class="info-group">
+                        <div class="label">Seriennummer:</div>
+                        <div id="result-serial" class="value monospace"></div>
+                    </div>
+                    <div class="info-group">
+                        <div class="label">Fingerprint:</div>
+                        <div id="result-fingerprint" class="value monospace"></div>
+                    </div>
+                    <div class="info-group">
+                        <div class="label">Common Name (CN):</div>
+                        <div id="result-cn" class="value"></div>
+                    </div>
+                </div>
+                
+                <div class="result-section">
+                    <h3>Subject Alternative Names (SANs)</h3>
+                    <div id="result-sans" class="sans-list"></div>
+                </div>
+                
+                <div class="result-section validation-results">
+                    <h3>Validierungsergebnisse</h3>
+                    <div id="hostname-validation" class="validation-item">
+                        <div class="validation-icon"></div>
+                        <div class="validation-text"></div>
+                    </div>
+                    <div id="chain-validation" class="validation-item">
+                        <div class="validation-icon"></div>
+                        <div class="validation-text"></div>
+                    </div>
+                    <div id="expiry-validation" class="validation-item">
+                        <div class="validation-icon"></div>
+                        <div class="validation-text"></div>
+                    </div>
+                </div>
+                
+                <div class="result-section expiry-info">
+                    <h3>Gültigkeit</h3>
+                    <div class="info-group">
+                        <div class="label">Gültig bis:</div>
+                        <div id="result-expiry" class="value"></div>
+                    </div>
+                    <div class="info-group">
+                        <div class="label">Verbleibende Tage:</div>
+                        <div id="result-days-left" class="value"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="error-container" class="hidden">
+                <h3>Fehler bei der Überprüfung</h3>
+                <div id="error-message" class="error-text"></div>
+            </div>
+        </section>
+    </div>
+    
+    <script src="/static/js/script.js"></script>
+</body>
+</html>
+
