@@ -1,10 +1,9 @@
-import bottle
-from bottle import run, static_file, request, response, template
+from bottle import Bottle, run, static_file, request, response, template
 import os
 import json
 from ssl_checker import get_cert_info
 
-app=bottle()
+app = Bottle()
 
 # Statische Dateien (CSS, JS)
 @app.route('/static/<filename:path>')
