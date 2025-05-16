@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Python-Packages aus der Builder-Stage kopieren
-COPY --from=builder /python-packages /usr/local/lib/python3.11/site-packages/
+COPY --from=builder /python-packages /usr/local/lib/python3.9/site-packages/
 
 # Anwendungsverzeichnisse erstellen
 RUN mkdir -p /app/static/css /app/static/js /app/views
