@@ -24,6 +24,17 @@ def get_cert_info(url):
     else:
         port = 443
     
+    chain_valid = False
+    chain_error = None
+    cert = None
+    sans = []
+    common_name = ''
+    serial = ''
+    fingerprint = ''
+    not_before = None
+    not_after = None
+    days_left = 0
+    
     try:
         # Verbindung herstellen und Zertifikat abrufen
         context = ssl.create_default_context()
@@ -33,42 +44,45 @@ def get_cert_info(url):
                 cert = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_binary)
                 cert_info = ssock.getpeercert()
         
-        # Grundlegende Zertifikatsinformationen extrahieren
-        subject = cert.get_subject()
-        issuer = cert.get_issuer()
-        
-        # Serial Number
-        serial = format(cert.get_serial_number(), 'X')
-        
-        # Fingerprint
-        fingerprint = cert.digest('sha256').decode('utf-8')
-        
-        # Common Name
-        common_name = ''
-        for item in subject.get_components():
-            if item[0] == b'CN':
-                common_name = item[1].decode('utf-8')
-                break
-        
-        # Subject Alternative Names (SANs)
-        sans = []
-        for item in cert_info.get('subjectAltName', []):
-            if item[0] == 'DNS':
-                sans.append(item[1])
-        
-        # Gültigkeitszeitraum
-        not_before = datetime.datetime.strptime(
-            cert_info['notBefore'], '%b %d %H:%M:%S %Y %Z')
-        not_after = datetime.datetime.strptime(
-            cert_info['notAfter'], '%b %d %H:%M:%S %Y %Z')
-        
-        days_left = (not_after - datetime.datetime.now()).days
+                # Grundlegende Zertifikatsinformationen extrahieren
+                subject = cert.get_subject()
+                issuer = cert.get_issuer()
+                
+                # Serial Number
+                serial = format(cert.get_serial_number(), 'X')
+                
+                # Fingerprint
+                fingerprint = cert.digest('sha256').decode('utf-8')
+                
+                # Common Name
+                for item in subject.get_components():
+                    if item[0] == b'CN':
+                        common_name = item[1].decode('utf-8')
+                        break
+                
+                # Subject Alternative Names (SANs)
+                sans = []
+                for item in cert_info.get('subjectAltName', []):
+                    if item[0] == 'DNS':
+                        sans.append(item[1])
+                
+                # Gültigkeitszeitraum
+                not_before = datetime.datetime.strptime(
+                    cert_info['notBefore'], '%b %d %H:%M:%S %Y %Z')
+                not_after = datetime.datetime.strptime(
+                    cert_info['notAfter'], '%b %d %H:%M:%S %Y %Z')
+                
+                days_left = (not_after - datetime.datetime.now()).days
         
         # Hostname-Validierung
         hostname_valid = is_hostname_valid(hostname, common_name, sans)
         
-        # Chain-Validierung
-        chain_valid, chain_error = validate_cert_chain(cert, hostname)
+        # Chain-Validierung - wird separate ausgeführt und fängt Fehler ab
+        try:
+            chain_valid, chain_error = validate_cert_chain(cert, hostname)
+        except Exception as e:
+            chain_valid = False
+            chain_error = str(e)
         
         # Statuswerte bestimmen
         expiry_status = get_expiry_status(days_left)
@@ -82,8 +96,8 @@ def get_cert_info(url):
             'fingerprint': fingerprint,
             'common_name': common_name,
             'sans': sans,
-            'not_before': not_before.strftime('%d.%m.%Y'),
-            'not_after': not_after.strftime('%d.%m.%Y'),
+            'not_before': not_before.strftime('%d.%m.%Y') if not_before else '',
+            'not_after': not_after.strftime('%d.%m.%Y') if not_after else '',
             'days_left': days_left,
             'hostname_valid': hostname_valid,
             'chain_valid': chain_valid,

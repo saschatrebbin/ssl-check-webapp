@@ -24,6 +24,9 @@ document.addEventListener('DOMContentLoaded', function() {
         resultContainer.classList.add('hidden');
         errorContainer.classList.add('hidden');
         
+        // Alle Ergebnisfelder zurücksetzen
+        resetResults();
+        
         try {
             // API-Aufruf
             const response = await fetch('/api/check-ssl', {
@@ -51,9 +54,46 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
+    function resetResults() {
+        // Alle Ergebnisfelder zurücksetzen
+        document.getElementById('result-url').textContent = '';
+        document.getElementById('result-url').innerHTML = '';
+        document.getElementById('result-hostname').textContent = '';
+        document.getElementById('result-port').textContent = '';
+        document.getElementById('result-timestamp').textContent = '';
+        document.getElementById('result-serial').textContent = '';
+        document.getElementById('result-fingerprint').textContent = '';
+        document.getElementById('result-cn').textContent = '';
+        document.getElementById('result-sans').innerHTML = '';
+        
+        const hostnameValidation = document.getElementById('hostname-validation');
+        hostnameValidation.className = 'validation-item';
+        hostnameValidation.querySelector('.validation-text').textContent = '';
+        
+        const chainValidation = document.getElementById('chain-validation');
+        chainValidation.className = 'validation-item';
+        chainValidation.querySelector('.validation-text').textContent = '';
+        
+        const expiryValidation = document.getElementById('expiry-validation');
+        expiryValidation.className = 'validation-item';
+        expiryValidation.querySelector('.validation-text').textContent = '';
+        
+        document.getElementById('result-expiry').textContent = '';
+        document.getElementById('result-days-left').textContent = '';
+        document.getElementById('result-days-left').className = 'value';
+    }
+    
     function displayResults(data) {
         // Grundinformationen
-        document.getElementById('result-url').textContent = data.url;
+        // URL als klickbaren Link darstellen
+        const urlElement = document.getElementById('result-url');
+        const urlLink = document.createElement('a');
+        urlLink.href = data.url;
+        urlLink.target = '_blank';
+        urlLink.textContent = data.url;
+        urlElement.innerHTML = '';
+        urlElement.appendChild(urlLink);
+        
         document.getElementById('result-hostname').textContent = data.hostname;
         document.getElementById('result-port').textContent = data.port;
         document.getElementById('result-timestamp').textContent = `Geprüft am: ${data.timestamp}`;
@@ -152,4 +192,3 @@ document.addEventListener('DOMContentLoaded', function() {
         loadingIndicator.classList.add('hidden');
     }
 });
-
