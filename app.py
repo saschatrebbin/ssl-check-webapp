@@ -4,6 +4,8 @@ import os
 import json
 from ssl_checker import get_cert_info
 
+app=bottle()
+
 # Statische Dateien (CSS, JS)
 @app.route('/static/<filename:path>')
 def serve_static(filename):
