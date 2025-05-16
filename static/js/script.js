@@ -66,6 +66,10 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('result-cn').textContent = '';
         document.getElementById('result-sans').innerHTML = '';
         
+        // Redirects zurücksetzen
+        document.getElementById('redirects-section').classList.add('hidden');
+        document.getElementById('redirects-list').innerHTML = '<div class="no-redirects">Keine Weiterleitungen gefunden</div>';
+        
         const hostnameValidation = document.getElementById('hostname-validation');
         hostnameValidation.className = 'validation-item';
         hostnameValidation.querySelector('.validation-text').textContent = '';
@@ -82,7 +86,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('result-days-left').textContent = '';
         document.getElementById('result-days-left').className = 'value';
     }
-    
+
     function displayResults(data) {
         // Grundinformationen
         // URL als klickbaren Link darstellen
@@ -94,20 +98,50 @@ document.addEventListener('DOMContentLoaded', function() {
         urlElement.innerHTML = '';
         urlElement.appendChild(urlLink);
         
-        document.getElementById('result-hostname').textContent = data.hostname;
-        document.getElementById('result-port').textContent = data.port;
+        document.getElementById('result-hostname').textContent = data.hostname || 'Nicht verfügbar';
+        document.getElementById('result-port').textContent = data.port || 'Nicht verfügbar';
         document.getElementById('result-timestamp').textContent = `Geprüft am: ${data.timestamp}`;
         
+        // Weiterleitungen anzeigen (wenn vorhanden)
+        const redirectsSection = document.getElementById('redirects-section');
+        const redirectsList = document.getElementById('redirects-list');
+        
+        if (data.redirects && data.redirects.length > 0) {
+            redirectsSection.classList.remove('hidden');
+            redirectsList.innerHTML = '';
+            
+            data.redirects.forEach((redirect, index) => {
+                const redirectItem = document.createElement('div');
+                redirectItem.className = 'redirect-item';
+                
+                const statusClass = `status-${redirect.status}`;
+                const statusText = `${redirect.status} ${redirect.reason}`;
+                
+                redirectItem.innerHTML = `
+                    <div>
+                        <span class="redirect-status ${statusClass}">${statusText}</span>
+                        <span class="redirect-url">${redirect.from}</span>
+                    </div>
+                    <div class="redirect-arrow">↓</div>
+                    <div class="redirect-url">${redirect.to}</div>
+                `;
+                
+                redirectsList.appendChild(redirectItem);
+            });
+        } else {
+            redirectsSection.classList.add('hidden');
+        }
+        
         // Zertifikatsinformationen
-        document.getElementById('result-serial').textContent = data.serial;
-        document.getElementById('result-fingerprint').textContent = data.fingerprint;
-        document.getElementById('result-cn').textContent = data.common_name;
+        document.getElementById('result-serial').textContent = data.serial || 'Nicht verfügbar';
+        document.getElementById('result-fingerprint').textContent = data.fingerprint || 'Nicht verfügbar';
+        document.getElementById('result-cn').textContent = data.common_name || 'Nicht verfügbar';
         
         // Subject Alternative Names
         const sansContainer = document.getElementById('result-sans');
         sansContainer.innerHTML = '';
         
-        if (data.sans.length === 0) {
+        if (!data.sans || data.sans.length === 0) {
             sansContainer.innerHTML = '<div class="sans-item">Keine SANs vorhanden</div>';
         } else {
             data.sans.forEach(san => {
@@ -148,7 +182,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Ablaufdatum
-        document.getElementById('result-expiry').textContent = data.not_after;
+        document.getElementById('result-expiry').textContent = data.not_after || 'Nicht verfügbar';
         
         // Verbleibende Tage und Status
         const daysLeftElement = document.getElementById('result-days-left');
@@ -157,27 +191,33 @@ document.addEventListener('DOMContentLoaded', function() {
         
         let statusClass, statusText;
         
-        switch (data.expiry_status) {
-            case 'ABGELAUFEN':
-                statusClass = 'expired';
-                statusText = 'Zertifikat ist abgelaufen!';
-                break;
-            case 'KRITISCH':
-                statusClass = 'critical';
-                statusText = 'Zertifikat läuft bald ab (weniger als 30 Tage)!';
-                break;
-            case 'WARNUNG':
-                statusClass = 'warning';
-                statusText = 'Zertifikat läuft in weniger als 90 Tagen ab.';
-                break;
-            default:
-                statusClass = 'ok';
-                statusText = 'Zertifikat ist gültig.';
+        if (!data.days_left && data.days_left !== 0) {
+            statusClass = 'warning';
+            statusText = 'Gültigkeitsdauer konnte nicht ermittelt werden';
+            daysLeftElement.textContent = 'Unbekannt';
+        } else {
+            switch (data.expiry_status) {
+                case 'ABGELAUFEN':
+                    statusClass = 'expired';
+                    statusText = 'Zertifikat ist abgelaufen!';
+                    break;
+                case 'KRITISCH':
+                    statusClass = 'critical';
+                    statusText = 'Zertifikat läuft bald ab (weniger als 30 Tage)!';
+                    break;
+                case 'WARNUNG':
+                    statusClass = 'warning';
+                    statusText = 'Zertifikat läuft in weniger als 90 Tagen ab.';
+                    break;
+                default:
+                    statusClass = 'ok';
+                    statusText = 'Zertifikat ist gültig.';
+            }
+            
+            daysLeftElement.textContent = `${data.days_left} Tage (${data.expiry_status})`;
         }
         
-        daysLeftElement.textContent = `${data.days_left} Tage (${data.expiry_status})`;
         daysLeftElement.className = `value ${statusClass}`;
-        
         expiryValidation.classList.add(`validation-${statusClass}`);
         expiryValidation.querySelector('.validation-text').textContent = statusText;
         

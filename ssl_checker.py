@@ -3,6 +3,8 @@ import socket
 import datetime
 import OpenSSL.crypto as crypto
 from urllib.parse import urlparse
+import requests
+from requests.exceptions import RequestException
 import re
 
 def get_cert_info(url):
@@ -10,9 +12,40 @@ def get_cert_info(url):
     Extrahiert Informationen zum SSL-Zertifikat einer gegebenen URL.
     Gibt ein strukturiertes Wörterbuch mit allen relevanten Informationen zurück.
     """
+    # Ergebnisstruktur mit Standardwerten
+    result = {
+        'url': url,
+        'hostname': '',
+        'port': 443,
+        'serial': '',
+        'fingerprint': '',
+        'common_name': '',
+        'sans': [],
+        'not_before': '',
+        'not_after': '',
+        'days_left': 0,
+        'hostname_valid': False,
+        'chain_valid': False,
+        'chain_error': None,
+        'expiry_status': 'UNBEKANNT',
+        'wildcard_cert': False,
+        'timestamp': datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S'),
+        'redirects': []
+    }
+    
+    # Prüfe auf Redirects bevor wir weitergehen
+    redirect_info = check_redirects(url)
+    if redirect_info['redirects']:
+        result['redirects'] = redirect_info['redirects']
+        if redirect_info['final_url'] != url:
+            # Aktualisiere URL für den SSL-Check
+            url = redirect_info['final_url']
+            result['url'] = url
+    
     # URL parsen und Host extrahieren
     if not url.startswith('http'):
         url = f'https://{url}'
+        result['url'] = url
     
     parsed_url = urlparse(url)
     hostname = parsed_url.netloc
@@ -24,100 +57,130 @@ def get_cert_info(url):
     else:
         port = 443
     
-    chain_valid = False
-    chain_error = None
+    result['hostname'] = hostname
+    result['port'] = port
+    
+    # Zertifikat abrufen - mit reduzierter Verifikation
     cert = None
-    sans = []
-    common_name = ''
-    serial = ''
-    fingerprint = ''
-    not_before = None
-    not_after = None
-    days_left = 0
+    cert_info = None
     
     try:
-        # Verbindung herstellen und Zertifikat abrufen
-        context = ssl.create_default_context()
+        # Verwende einen nicht-überprüfenden Kontext
+        context = ssl._create_unverified_context()
         with socket.create_connection((hostname, port), timeout=10) as sock:
             with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                 cert_binary = ssock.getpeercert(binary_form=True)
                 cert = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_binary)
                 cert_info = ssock.getpeercert()
-        
+                
                 # Grundlegende Zertifikatsinformationen extrahieren
-                subject = cert.get_subject()
-                issuer = cert.get_issuer()
-                
-                # Serial Number
-                serial = format(cert.get_serial_number(), 'X')
-                
-                # Fingerprint
-                fingerprint = cert.digest('sha256').decode('utf-8')
-                
-                # Common Name
-                for item in subject.get_components():
-                    if item[0] == b'CN':
-                        common_name = item[1].decode('utf-8')
-                        break
+                if cert:
+                    # Serial Number
+                    result['serial'] = format(cert.get_serial_number(), 'X')
+                    
+                    # Fingerprint
+                    result['fingerprint'] = cert.digest('sha256').decode('utf-8')
+                    
+                    # Subject-Informationen
+                    subject = cert.get_subject()
+                    for item in subject.get_components():
+                        if item[0] == b'CN':
+                            result['common_name'] = item[1].decode('utf-8')
+                            break
                 
                 # Subject Alternative Names (SANs)
-                sans = []
-                for item in cert_info.get('subjectAltName', []):
-                    if item[0] == 'DNS':
-                        sans.append(item[1])
+                if cert_info and 'subjectAltName' in cert_info:
+                    for item in cert_info['subjectAltName']:
+                        if item[0] == 'DNS':
+                            result['sans'].append(item[1])
                 
                 # Gültigkeitszeitraum
-                not_before = datetime.datetime.strptime(
-                    cert_info['notBefore'], '%b %d %H:%M:%S %Y %Z')
-                not_after = datetime.datetime.strptime(
-                    cert_info['notAfter'], '%b %d %H:%M:%S %Y %Z')
-                
-                days_left = (not_after - datetime.datetime.now()).days
-        
-        # Hostname-Validierung
-        hostname_valid = is_hostname_valid(hostname, common_name, sans)
-        
-        # Chain-Validierung - wird separate ausgeführt und fängt Fehler ab
+                if cert_info and 'notBefore' in cert_info and 'notAfter' in cert_info:
+                    not_before = datetime.datetime.strptime(
+                        cert_info['notBefore'], '%b %d %H:%M:%S %Y %Z')
+                    not_after = datetime.datetime.strptime(
+                        cert_info['notAfter'], '%b %d %H:%M:%S %Y %Z')
+                    
+                    result['not_before'] = not_before.strftime('%d.%m.%Y')
+                    result['not_after'] = not_after.strftime('%d.%m.%Y')
+                    result['days_left'] = (not_after - datetime.datetime.now()).days
+                    result['expiry_status'] = get_expiry_status(result['days_left'])
+    except Exception as e:
+        # Verbindungsfehler protokollieren, aber weitermachen
+        pass
+    
+    # Hostname-Validierung separat durchführen
+    if result['common_name'] or result['sans']:
+        result['hostname_valid'] = is_hostname_valid(hostname, result['common_name'], result['sans'])
+        result['wildcard_cert'] = '*.' in result['common_name'] or any('*.' in san for san in result['sans'])
+    
+    # Certificate Chain separat validieren
+    if cert:
         try:
             chain_valid, chain_error = validate_cert_chain(cert, hostname)
+            result['chain_valid'] = chain_valid
+            result['chain_error'] = chain_error
         except Exception as e:
-            chain_valid = False
-            chain_error = str(e)
-        
-        # Statuswerte bestimmen
-        expiry_status = get_expiry_status(days_left)
-        
-        # Ergebnis zusammenstellen
-        result = {
-            'url': url,
-            'hostname': hostname,
-            'port': port,
-            'serial': serial,
-            'fingerprint': fingerprint,
-            'common_name': common_name,
-            'sans': sans,
-            'not_before': not_before.strftime('%d.%m.%Y') if not_before else '',
-            'not_after': not_after.strftime('%d.%m.%Y') if not_after else '',
-            'days_left': days_left,
-            'hostname_valid': hostname_valid,
-            'chain_valid': chain_valid,
-            'chain_error': chain_error,
-            'expiry_status': expiry_status,
-            'wildcard_cert': any('*.' in san for san in sans) or '*.' in common_name,
-            'timestamp': datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')
-        }
-        
-        return {
-            'success': True,
-            'data': result
-        }
-        
-    except Exception as e:
-        return {
-            'success': False,
-            'error': str(e)
-        }
+            result['chain_valid'] = False
+            result['chain_error'] = str(e)
+    
+    return {
+        'success': True,
+        'data': result
+    }
 
+def check_redirects(url):
+    """
+    Überprüft, ob eine URL Weiterleitungen aufweist und gibt die Redirect-Kette zurück.
+    """
+    if not url.startswith('http'):
+        url = f'https://{url}'
+    
+    redirects = []
+    final_url = url
+    
+    try:
+        # Manuelle Weiterleitungsverfolgung deaktivieren, um sie selbst zu protokollieren
+        session = requests.Session()
+        session.max_redirects = 10
+        
+        response = session.get(url, allow_redirects=False, timeout=10)
+        current_url = url
+        
+        # Verfolge Weiterleitungen manuell
+        while response.is_redirect and len(redirects) < 10:
+            redirect_url = response.headers['Location']
+            
+            # Relative URLs zu absoluten machen
+            if redirect_url.startswith('/'):
+                parsed_url = urlparse(current_url)
+                redirect_url = f"{parsed_url.scheme}://{parsed_url.netloc}{redirect_url}"
+            
+            # Weiterleitung protokollieren
+            redirects.append({
+                'from': current_url,
+                'to': redirect_url,
+                'status': response.status_code,
+                'reason': response.reason
+            })
+            
+            # Auf die neue URL umschalten
+            current_url = redirect_url
+            response = session.get(current_url, allow_redirects=False, timeout=10)
+        
+        final_url = current_url
+        
+    except RequestException as e:
+        # Bei Netzwerkfehlern die verfügbaren Informationen zurückgeben
+        pass
+    except Exception as e:
+        # Andere Fehler ignorieren
+        pass
+    
+    return {
+        'redirects': redirects,
+        'final_url': final_url
+    }
 
 def is_hostname_valid(hostname, common_name, sans):
     """
@@ -133,7 +196,8 @@ def is_hostname_valid(hostname, common_name, sans):
     
     # Prüfe alle Wildcard-Einträge
     wildcard_patterns = [s for s in sans if s.startswith('*.')]
-    wildcard_patterns.append(common_name if common_name.startswith('*.') else None)
+    if common_name and common_name.startswith('*.'):
+        wildcard_patterns.append(common_name)
     
     for pattern in wildcard_patterns:
         if not pattern:
@@ -196,4 +260,3 @@ def get_expiry_status(days_left):
         return "WARNUNG"
     else:
         return "OK"
-

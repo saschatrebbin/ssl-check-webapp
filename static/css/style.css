@@ -282,3 +282,53 @@ button:hover {
     }
 }
 
+/* Weiterleitungen */
+.redirects-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.redirect-item {
+    margin-bottom: 8px;
+    padding: 8px;
+    background-color: white;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.redirect-status {
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+.redirect-status.status-301 {
+    color: #2980b9; /* Permanent redirect */
+}
+
+.redirect-status.status-302 {
+    color: #27ae60; /* Temporary redirect */
+}
+
+.redirect-status.status-307 {
+    color: #f39c12; /* Temporary redirect, method preserved */
+}
+
+.redirect-status.status-308 {
+    color: #8e44ad; /* Permanent redirect, method preserved */
+}
+
+.redirect-arrow {
+    display: block;
+    text-align: center;
+    margin: 5px 0;
+    color: #7f8c8d;
+}
+
+.redirect-url {
+    word-break: break-all;
+}
+
+.no-redirects {
+    color: #7f8c8d;
+    font-style: italic;
+}
