@@ -65,7 +65,7 @@ def get_cert_info(url):
     cert_info = None
     
     try:
-        # Verwende einen nicht-überprüfenden Kontext
+        # Verbindung herstellen und Zertifikat abrufen
         context = ssl._create_unverified_context()
         with socket.create_connection((hostname, port), timeout=10) as sock:
             with context.wrap_socket(sock, server_hostname=hostname) as ssock:
@@ -87,43 +87,61 @@ def get_cert_info(url):
                         if item[0] == b'CN':
                             result['common_name'] = item[1].decode('utf-8')
                             break
-                
-                # Subject Alternative Names (SANs)
-                if cert_info and 'subjectAltName' in cert_info:
-                    for item in cert_info['subjectAltName']:
-                        if item[0] == 'DNS':
-                            result['sans'].append(item[1])
-                
-                # Gültigkeitszeitraum
-                if cert_info and 'notBefore' in cert_info and 'notAfter' in cert_info:
-                    not_before = datetime.datetime.strptime(
-                        cert_info['notBefore'], '%b %d %H:%M:%S %Y %Z')
-                    not_after = datetime.datetime.strptime(
-                        cert_info['notAfter'], '%b %d %H:%M:%S %Y %Z')
                     
-                    result['not_before'] = not_before.strftime('%d.%m.%Y')
-                    result['not_after'] = not_after.strftime('%d.%m.%Y')
-                    result['days_left'] = (not_after - datetime.datetime.now()).days
-                    result['expiry_status'] = get_expiry_status(result['days_left'])
+                    # KRITISCHE ÄNDERUNG: SANs direkt aus dem X509-Zertifikat auslesen
+                    # Suche nach SANs über Extensions
+                    sans = []
+                    for i in range(cert.get_extension_count()):
+                        ext = cert.get_extension(i)
+                        if ext.get_short_name() == b'subjectAltName':
+                            sans_text = str(ext)
+                            # Extrahiere DNS-Namen aus dem Format: DNS:example.com, DNS:www.example.com
+                            import re
+                            sans = re.findall(r'DNS:([\w\*\.-]+)', sans_text)
+                            break
+                    
+                    # Nur wenn keine SANs gefunden wurden, versuche sie aus cert_info zu extrahieren
+                    if not sans and cert_info and 'subjectAltName' in cert_info:
+                        for item in cert_info['subjectAltName']:
+                            if item[0] == 'DNS':
+                                sans.append(item[1])
+                    
+                    result['sans'] = sans
+                    
+                    # KRITISCHE ÄNDERUNG: Gültigkeit direkt aus dem X509-Zertifikat extrahieren
+                    try:
+                        # Gültigkeit direkt aus dem X509-Zertifikat extrahieren
+                        not_before = datetime.datetime.strptime(
+                            cert.get_notBefore().decode('utf-8'), '%Y%m%d%H%M%SZ')
+                        not_after = datetime.datetime.strptime(
+                            cert.get_notAfter().decode('utf-8'), '%Y%m%d%H%M%SZ')
+                        
+                        result['not_before'] = not_before.strftime('%d.%m.%Y')
+                        result['not_after'] = not_after.strftime('%d.%m.%Y')
+                        result['days_left'] = (not_after - datetime.datetime.now()).days
+                        result['expiry_status'] = get_expiry_status(result['days_left'])
+                    except Exception as e:
+                        # Falls dieser Ansatz fehlschlägt, versuchen wir es mit cert_info
+                        result['cert_errors'] = result.get('cert_errors', []) + [f"Fehler beim Auslesen der Gültigkeit: {str(e)}"]
+                        if cert_info and 'notBefore' in cert_info and 'notAfter' in cert_info:
+                            not_before = datetime.datetime.strptime(
+                                cert_info['notBefore'], '%b %d %H:%M:%S %Y %Z')
+                            not_after = datetime.datetime.strptime(
+                                cert_info['notAfter'], '%b %d %H:%M:%S %Y %Z')
+                            
+                            result['not_before'] = not_before.strftime('%d.%m.%Y')
+                            result['not_after'] = not_after.strftime('%d.%m.%Y')
+                            result['days_left'] = (not_after - datetime.datetime.now()).days
+                            result['expiry_status'] = get_expiry_status(result['days_left'])
+                
     except Exception as e:
-        # Verbindungsfehler protokollieren, aber weitermachen
-        pass
-    
-    # Hostname-Validierung separat durchführen
-    if result['common_name'] or result['sans']:
-        result['hostname_valid'] = is_hostname_valid(hostname, result['common_name'], result['sans'])
-        result['wildcard_cert'] = '*.' in result['common_name'] or any('*.' in san for san in result['sans'])
-    
-    # Certificate Chain separat validieren
-    if cert:
-        try:
-            chain_valid, chain_error = validate_cert_chain(cert, hostname)
-            result['chain_valid'] = chain_valid
-            result['chain_error'] = chain_error
-        except Exception as e:
-            result['chain_valid'] = False
-            result['chain_error'] = str(e)
-    
+        # Füge detaillierte Fehlerinfos hinzu
+        result['cert_errors'] = result.get('cert_errors', []) + [f"Verbindungsfehler: {str(e)}"]
+        
+    # Ergänze Fehlerlog mit allen aufgetretenen Fehlern
+    if 'chain_error' in result and result['chain_error']:
+        result['cert_errors'] = result.get('cert_errors', []) + [f"Chain-Validierungsfehler: {result['chain_error']}"]
+        
     return {
         'success': True,
         'data': result

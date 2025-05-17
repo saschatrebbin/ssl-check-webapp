@@ -332,3 +332,26 @@ button:hover {
     color: #7f8c8d;
     font-style: italic;
 }
+
+/* Zertifikatsprüfungs-Logs */
+.cert-logs-list {
+    max-height: 200px;
+    overflow-y: auto;
+    background-color: #1a1a1a;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: monospace;
+    color: #f8f8f8;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.cert-log-item {
+    margin-bottom: 4px;
+    border-left: 3px solid #e74c3c;
+    padding-left: 8px;
+}
+
+.cert-logs h3 {
+    color: #e74c3c;
+}

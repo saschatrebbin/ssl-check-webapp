@@ -85,6 +85,9 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('result-expiry').textContent = '';
         document.getElementById('result-days-left').textContent = '';
         document.getElementById('result-days-left').className = 'value';
+
+        document.getElementById('cert-logs-section').classList.add('hidden');
+        document.getElementById('cert-logs-list').innerHTML = '';
     }
 
     function displayResults(data) {
@@ -137,7 +140,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('result-fingerprint').textContent = data.fingerprint || 'Nicht verfügbar';
         document.getElementById('result-cn').textContent = data.common_name || 'Nicht verfügbar';
         
-        // Subject Alternative Names
+        // Subject Alternative Names - VERBESSERTE BEHANDLUNG
         const sansContainer = document.getElementById('result-sans');
         sansContainer.innerHTML = '';
         
@@ -181,20 +184,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 `Certificate Chain ist ungültig<br><small>${data.chain_error || 'Unbekannter Fehler'}</small>`;
         }
         
-        // Ablaufdatum
+        / Ablaufdatum
         document.getElementById('result-expiry').textContent = data.not_after || 'Nicht verfügbar';
-        
+
         // Verbleibende Tage und Status
         const daysLeftElement = document.getElementById('result-days-left');
         const expiryValidation = document.getElementById('expiry-validation');
         expiryValidation.className = 'validation-item';
-        
+
         let statusClass, statusText;
-        
+
         if (!data.days_left && data.days_left !== 0) {
             statusClass = 'warning';
             statusText = 'Gültigkeitsdauer konnte nicht ermittelt werden';
-            daysLeftElement.textContent = 'Unbekannt';
+            daysLeftElement.textContent = '0 Tage (UNBEKANNT)';
+            daysLeftElement.className = `value ${statusClass}`;
+            expiryValidation.classList.add(`validation-${statusClass}`);
+            expiryValidation.querySelector('.validation-text').textContent = statusText;
         } else {
             switch (data.expiry_status) {
                 case 'ABGELAUFEN':
@@ -220,6 +226,24 @@ document.addEventListener('DOMContentLoaded', function() {
         daysLeftElement.className = `value ${statusClass}`;
         expiryValidation.classList.add(`validation-${statusClass}`);
         expiryValidation.querySelector('.validation-text').textContent = statusText;
+
+        // ERGÄNZUNG: Logs anzeigen, wenn vorhanden
+        const logsSection = document.getElementById('cert-logs-section');
+        const logsList = document.getElementById('cert-logs-list');
+        
+        if (data.cert_errors && data.cert_errors.length > 0) {
+            logsSection.classList.remove('hidden');
+            logsList.innerHTML = '';
+            
+            data.cert_errors.forEach(error => {
+                const logItem = document.createElement('div');
+                logItem.className = 'cert-log-item';
+                logItem.textContent = error;
+                logsList.appendChild(logItem);
+            });
+        } else {
+            logsSection.classList.add('hidden');
+        }
         
         // Ergebniscontainer anzeigen
         resultContainer.classList.remove('hidden');
