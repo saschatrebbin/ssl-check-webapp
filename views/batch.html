@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSL-Zertifikat Batch-Prüfung</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SSL-Zertifikat Batch-Prüfung</h1>
+            <p>Überprüfen Sie mehrere SSL-Zertifikate gleichzeitig</p>
+            <nav class="main-nav">
+                <a href="/" class="nav-link">Einzelprüfung</a>
+                <a href="/batch" class="nav-link active">Batch-Prüfung</a>
+            </nav>
+        </header>
+
+        <section class="input-section">
+            <form id="batch-form">
+                <div class="form-group">
+                    <label for="domains-input">Domains (eine pro Zeile):</label>
+                    <textarea 
+                        id="domains-input" 
+                        placeholder="example.com&#10;example.org&#10;example.net" 
+                        rows="10"
+                        required
+                    ></textarea>
+                </div>
+                <div class="form-action">
+                    <button type="submit" id="check-button">Batch-Prüfung starten</button>
+                </div>
+            </form>
+        </section>
+
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <p id="loading-text">Starte Batch-Prüfung...</p>
+        </div>
+
+        <section id="batch-status" class="hidden">
+            <h2>Batch-Status</h2>
+            <div class="batch-info">
+                <div id="batch-id" class="info-item"></div>
+                <div id="batch-timestamp" class="timestamp"></div>
+            </div>
+            
+            <div class="progress-container">
+                <div class="progress-info">
+                    <span id="progress-text">0 von 0 Domains geprüft (0%)</span>
+                    <span id="batch-status-text" class="status">In Bearbeitung</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="progress-bar" class="progress-bar"></div>
+                </div>
+            </div>
+            
+            <div id="batch-actions" class="action-buttons">
+                <button id="refresh-status" class="secondary-button">Status aktualisieren</button>
+                <button id="export-csv" class="secondary-button" disabled>Als CSV exportieren</button>
+                <button id="show-summary" class="secondary-button" disabled>Zusammenfassung anzeigen</button>
+            </div>
+        </section>
+
+        <section id="batch-summary" class="hidden">
+            <h2>Zusammenfassung</h2>
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <div class="summary-value" id="summary-total">0</div>
+                    <div class="summary-label">Geprüfte Domains</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value" id="summary-success">0</div>
+                    <div class="summary-label">Erfolgreiche Prüfungen</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value" id="summary-hostname-valid">0</div>
+                    <div class="summary-label">Gültige Hostnamen</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value" id="summary-chain-valid">0</div>
+                    <div class="summary-label">Gültige Zertifikatsketten</div>
+                </div>
+            </div>
+            
+            <h3>Ablaufstatus</h3>
+            <div class="expiry-chart">
+                <div class="expiry-bar">
+                    <div class="expiry-segment ok" id="expiry-ok" style="width: 0%">
+                        <span class="expiry-value">0</span>
+                    </div>
+                    <div class="expiry-segment warning" id="expiry-warning" style="width: 0%">
+                        <span class="expiry-value">0</span>
+                    </div>
+                    <div class="expiry-segment critical" id="expiry-critical" style="width: 0%">
+                        <span class="expiry-value">0</span>
+                    </div>
+                    <div class="expiry-segment expired" id="expiry-expired" style="width: 0%">
+                        <span class="expiry-value">0</span>
+                    </div>
+                    <div class="expiry-segment unknown" id="expiry-unknown" style="width: 0%">
+                        <span class="expiry-value">0</span>
+                    </div>
+                </div>
+                <div class="expiry-legend">
+                    <div class="legend-item"><span class="color-box ok"></span> OK (>90 Tage)</div>
+                    <div class="legend-item"><span class="color-box warning"></span> Warnung (30-90 Tage)</div>
+                    <div class="legend-item"><span class="color-box critical"></span> Kritisch (<30 Tage)</div>
+                    <div class="legend-item"><span class="color-box expired"></span> Abgelaufen</div>
+                    <div class="legend-item"><span class="color-box unknown"></span> Unbekannt</div>
+                </div>
+            </div>
+        </section>
+
+        <section id="batch-results" class="hidden">
+            <h2>Ergebnisse</h2>
+            <div class="filter-options">
+                <select id="filter-status" class="filter-select">
+                    <option value="all">Alle Status</option>
+                    <option value="success">Nur erfolgreiche</option>
+                    <option value="error">Nur fehlerhafte</option>
+                </select>
+                <select id="filter-expiry" class="filter-select">
+                    <option value="all">Alle Ablaufzeiten</option>
+                    <option value="expired">Abgelaufen</option>
+                    <option value="critical">Kritisch</option>
+                    <option value="warning">Warnung</option>
+                    <option value="ok">OK</option>
+                </select>
+                <input type="text" id="search-domain" placeholder="Domain suchen..." class="search-input">
+            </div>
+            
+            <div class="results-table-container">
+                <table id="results-table" class="results-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="domain">Domain</th>
+                            <th class="sortable" data-sort="status">Status</th>
+                            <th class="sortable" data-sort="hostname">Hostname</th>
+                            <th class="sortable" data-sort="chain">Chain</th>
+                            <th class="sortable" data-sort="days">Tage</th>
+                            <th class="sortable" data-sort="common_name">Common Name</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-body">
+                        <!-- Hier werden die Ergebnisse dynamisch eingefügt -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div id="no-results" class="no-results hidden">
+                <p>Keine Ergebnisse gefunden.</p>
+            </div>
+        </section>
+
+        <div id="result-modal" class="modal hidden">
+            <div class="modal-content">
+                <span class="close-modal">&times;</span>
+                <h2>Detailergebnis</h2>
+                <div id="modal-content"></div>
+            </div>
+        </div>
+
+        <div id="error-container" class="hidden">
+            <h3>Fehler bei der Überprüfung</h3>
+            <div id="error-message" class="error-text"></div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const batchForm = document.getElementById('batch-form');
+            const domainsInput = document.getElementById('domains-input');
+            const loadingIndicator = document.getElementById('loading');
+            const loadingText = document.getElementById('loading-text');
+            const batchStatus = document.getElementById('batch-status');
+            const batchSummary = document.getElementById('batch-summary');
+            const batchResults = document.getElementById('batch-results');
+            const errorContainer = document.getElementById('error-container');
+            const errorMessage = document.getElementById('error-message');
+            
+            let currentBatchId = null;
+            let batchData = null;
+            let pollingInterval = null;
+            
+            // Event-Listener für Formular
+            batchForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                startBatchCheck();
+            });
+            
+            // Event-Listener für Aktualisierungsbutton
+            document.getElementById('refresh-status').addEventListener('click', function() {
+                if (currentBatchId) {
+                    checkBatchStatus(currentBatchId);
+                }
+            });
+            
+            // Event-Listener für CSV-Export
+            document.getElementById('export-csv').addEventListener('click', function() {
+                if (currentBatchId) {
+                    window.location.href = `/api/batch/${currentBatchId}/export/csv`;
+                }
+            });
+            
+            // Event-Listener für Zusammenfassung anzeigen
+            document.getElementById('show-summary').addEventListener('click', function() {
+                toggleSummaryView();
+            });
+            
+            // Funktionen für Filter und Sortierung
+            document.getElementById('filter-status').addEventListener('change', updateResultsTable);
+            document.getElementById('filter-expiry').addEventListener('change', updateResultsTable);
+            document.getElementById('search-domain').addEventListener('input', updateResultsTable);
+            
+            // Event-Delegation für sortierbare Spaltenüberschriften
+            document.querySelector('#results-table thead').addEventListener('click', function(e) {
+                const th = e.target.closest('th');
+                if (!th || !th.classList.contains('sortable')) return;
+                
+                const sortColumn = th.dataset.sort;
+                sortResultsTable(sortColumn);
+            });
+            
+            // Batch-Prüfung starten
+            async function startBatchCheck() {
+                const domains = domainsInput.value.trim().split('\n').filter(d => d.trim());
+                
+                if (domains.length === 0) {
+                    showError('Bitte geben Sie mindestens eine Domain ein.');
+                    return;
+                }
+                
+                // UI zurücksetzen und Ladeindikator anzeigen
+                loadingText.textContent = 'Starte Batch-Prüfung...';
+                loadingIndicator.classList.remove('hidden');
+                batchStatus.classList.add('hidden');
+                batchSummary.classList.add('hidden');
+                batchResults.classList.add('hidden');
+                errorContainer.classList.add('hidden');
+                
+                try {
+                    // API-Aufruf
+                    const response = await fetch('/api/batch', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ domains: domains })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    // Überprüfen, ob die Anfrage erfolgreich war
+                    if (!result.success) {
+                        throw new Error(result.error || 'Unbekannter Fehler beim Starten der Batch-Prüfung.');
+                    }
+                    
+                    // Batch-ID speichern und Status anzeigen
+                    currentBatchId = result.batch_id;
+                    document.getElementById('batch-id').textContent = `Batch-ID: ${result.batch_id}`;
+                    document.getElementById('batch-timestamp').textContent = `Gestartet: ${new Date().toLocaleString()}`;
+                    document.getElementById('progress-text').textContent = `0 von ${result.count} Domains geprüft (0%)`;
+                    document.getElementById('batch-status-text').textContent = 'In Bearbeitung';
+                    document.getElementById('progress-bar').style.width = '0%';
+                    
+                    // Status-Sektion anzeigen
+                    batchStatus.classList.remove('hidden');
+                    
+                    // Starte Status-Polling
+                    startStatusPolling(result.batch_id);
+                    
+                } catch (error) {
+                    showError(error.message);
+                } finally {
+                    loadingIndicator.classList.add('hidden');
+                }
+            }
+            
+            // Regelmäßiges Abrufen des Batch-Status
+            function startStatusPolling(batchId) {
+                // Bestehenden Intervall stoppen, falls vorhanden
+                if (pollingInterval) {
+                    clearInterval(pollingInterval);
+                }
+                
+                // Sofortige erste Abfrage
+                checkBatchStatus(batchId);
+                
+                // Intervall für Folgeabfragen
+                pollingInterval = setInterval(() => {
+                    checkBatchStatus(batchId);
+                }, 5000); // Alle 5 Sekunden abfragen
+            }
+            
+            // Batch-Status abfragen
+            async function checkBatchStatus(batchId) {
+                try {
+                    // Status-API aufrufen
+                    const response = await fetch(`/api/batch/${batchId}`);
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        throw new Error(result.error || 'Fehler beim Abrufen des Batch-Status.');
+                    }
+                    
+                    // Speichere die Daten
+                    batchData = result.data;
+                    
+                    // Aktualisiere die Statusanzeige
+                    updateStatusDisplay(result.data);
+                    
+                    // Wenn abgeschlossen, stoppe das Polling und zeige die Ergebnisse an
+                    if (result.data.status === 'completed') {
+                        if (pollingInterval) {
+                            clearInterval(pollingInterval);
+                            pollingInterval = null;
+                        }
+                        
+                        // Aktiviere Export- und Zusammenfassungsbuttons
+                        document.getElementById('export-csv').disabled = false;
+                        document.getElementById('show-summary').disabled = false;
+                        
+                        // Zeige die Zusammenfassung und Ergebnistabelle an
+                        updateSummaryDisplay(result.data.summary);
+                        batchSummary.classList.remove('hidden');
+                        
+                        // Ergebnistabelle aktualisieren
+                        populateResultsTable(result.data.results);
+                        batchResults.classList.remove('hidden');
+                    }
+                    
+                } catch (error) {
+                    console.error('Fehler bei der Status-Abfrage:', error);
+                    // Keine Fehlermeldung anzeigen, um das UI nicht zu stören
+                }
+            }
+            
+            // Status-Anzeige aktualisieren
+            function updateStatusDisplay(data) {
+                const progress = data.progress || 0;
+                document.getElementById('progress-text').textContent = 
+                    `${data.completed_domains} von ${data.total_domains} Domains geprüft (${Math.round(progress)}%)`;
+                document.getElementById('progress-bar').style.width = `${progress}%`;
+                
+                // Status-Text aktualisieren
+                const statusText = data.status === 'completed' ? 'Abgeschlossen' : 'In Bearbeitung';
+                document.getElementById('batch-status-text').textContent = statusText;
+                
+                // Status-Klasse aktualisieren
+                document.getElementById('batch-status-text').className = 
+                    `status ${data.status === 'completed' ? 'success' : 'pending'}`;
+            }
+            
+            // Zusammenfassung aktualisieren
+            function updateSummaryDisplay(summary) {
+                if (!summary) return;
+                
+                // Basiszahlen
+                document.getElementById('summary-total').textContent = summary.total;
+                document.getElementById('summary-success').textContent = summary.success;
+                document.getElementById('summary-hostname-valid').textContent = summary.hostname_valid;
+                document.getElementById('summary-chain-valid').textContent = summary.chain_valid;
+                
+                // Ablaufstatus
+                const expiry = summary.expiry_status;
+                const total = summary.total;
+                
+                if (total > 0) {
+                    // Berechne Prozentsätze
+                    const okPct = (expiry.ok / total) * 100;
+                    const warningPct = (expiry.warning / total) * 100;
+                    const criticalPct = (expiry.critical / total) * 100;
+                    const expiredPct = (expiry.expired / total) * 100;
+                    const unknownPct = (expiry.unknown / total) * 100;
+                    
+                    // Aktualisiere das Chart
+                    document.getElementById('expiry-ok').style.width = `${okPct}%`;
+                    document.getElementById('expiry-warning').style.width = `${warningPct}%`;
+                    document.getElementById('expiry-critical').style.width = `${criticalPct}%`;
+                    document.getElementById('expiry-expired').style.width = `${expiredPct}%`;
+                    document.getElementById('expiry-unknown').style.width = `${unknownPct}%`;
+                    
+                    // Aktualisiere die Werte
+                    document.getElementById('expiry-ok').querySelector('.expiry-value').textContent = expiry.ok;
+                    document.getElementById('expiry-warning').querySelector('.expiry-value').textContent = expiry.warning;
+                    document.getElementById('expiry-critical').querySelector('.expiry-value').textContent = expiry.critical;
+                    document.getElementById('expiry-expired').querySelector('.expiry-value').textContent = expiry.expired;
+                    document.getElementById('expiry-unknown').querySelector('.expiry-value').textContent = expiry.unknown;
+                }
+            }
+            
+            // Ergebnistabelle füllen
+            function populateResultsTable(results) {
+                const tbody = document.getElementById('results-body');
+                tbody.innerHTML = '';
+                
+                if (!results || results.length === 0) {
+                    document.getElementById('no-results').classList.remove('hidden');
+                    return;
+                }
+                
+                document.getElementById('no-results').classList.add('hidden');
+                
+                results.forEach(result => {
+                    const resultData = JSON.parse(result.result_json);
+                    const row = document.createElement('tr');
+                    
+                    // Domain
+                    const domainCell = document.createElement('td');
+                    domainCell.textContent = result.domain;
+                    domainCell.dataset.value = result.domain;
+                    row.appendChild(domainCell);
+                    
+                    // Status
+                    const statusCell = document.createElement('td');
+                    const statusIcon = document.createElement('span');
+                    statusIcon.className = `status-icon ${result.success ? 'success' : 'error'}`;
+                    statusIcon.textContent = result.success ? '✓' : '✗';
+                    statusCell.appendChild(statusIcon);
+                    statusCell.dataset.value = result.success ? 'success' : 'error';
+                    row.appendChild(statusCell);
+                    
+                    // Hostname-Validierung
+                    const hostnameCell = document.createElement('td');
+                    const hostnameIcon = document.createElement('span');
+                    hostnameIcon.className = `status-icon ${result.hostname_valid ? 'success' : 'error'}`;
+                    hostnameIcon.textContent = result.hostname_valid ? '✓' : '✗';
+                    hostnameCell.appendChild(hostnameIcon);
+                    hostnameCell.dataset.value = result.hostname_valid ? 'valid' : 'invalid';
+                    row.appendChild(hostnameCell);
+                    
+                    // Chain-Validierung
+                    const chainCell = document.createElement('td');
+                    const chainIcon = document.createElement('span');
+                    chainIcon.className = `status-icon ${result.chain_valid ? 'success' : 'error'}`;
+                    chainIcon.textContent = result.chain_valid ? '✓' : '✗';
+                    chainCell.appendChild(chainIcon);
+                    chainCell.dataset.value = result.chain_valid ? 'valid' : 'invalid';
+                    row.appendChild(chainCell);
+                    
+                    // Verbleibende Tage
+                    const daysCell = document.createElement('td');
+                    const daysLeft = resultData.days_left;
+                    let daysClass = '';
+                    
+                    if (daysLeft === undefined || daysLeft === null) {
+                        daysCell.textContent = '?';
+                        daysClass = 'unknown';
+                        daysCell.dataset.value = -99999; // Für Sortierung
+                    } else {
+                        daysCell.textContent = daysLeft;
+                        daysCell.dataset.value = daysLeft;
+                        
+                        if (daysLeft < 0) {
+                            daysClass = 'expired';
+                        } else if (daysLeft <= 30) {
+                            daysClass = 'critical';
+                        } else if (daysLeft <= 90) {
+                            daysClass = 'warning';
+                        } else {
+                            daysClass = 'ok';
+                        }
+                    }
+                    
+                    daysCell.classList.add(daysClass);
+                    row.appendChild(daysCell);
+                    
+                    // Common Name
+                    const cnCell = document.createElement('td');
+                    cnCell.textContent = resultData.common_name || 'N/A';
+                    cnCell.dataset.value = resultData.common_name || '';
+                    row.appendChild(cnCell);
+                    
+                    // Aktionen
+                    const actionsCell = document.createElement('td');
+                    const detailsButton = document.createElement('button');
+                    detailsButton.className = 'action-button';
+                    detailsButton.textContent = 'Details';
+                    detailsButton.addEventListener('click', () => showResultDetails(resultData));
+                    actionsCell.appendChild(detailsButton);
+                    row.appendChild(actionsCell);
+                    
+                    // Setze Daten-Attribute für Filterung
+                    row.dataset.domain = result.domain;
+                    row.dataset.status = result.success ? 'success' : 'error';
+                    row.dataset.expiry = daysClass;
+                    
+                    tbody.appendChild(row);
+                });
+                
+                // Initial sortieren nach Domain
+                sortResultsTable('domain');
+            }
+            
+            // Ergebnistabelle filtern und aktualisieren
+            function updateResultsTable() {
+                const statusFilter = document.getElementById('filter-status').value;
+                const expiryFilter = document.getElementById('filter-expiry').value;
+                const searchText = document.getElementById('search-domain').value.toLowerCase();
+                
+                const rows = document.querySelectorAll('#results-body tr');
+                let visibleCount = 0;
+                
+                rows.forEach(row => {
+                    const domain = row.dataset.domain.toLowerCase();
+                    const status = row.dataset.status;
+                    const expiry = row.dataset.expiry;
+                    
+                    const statusMatch = statusFilter === 'all' || status === statusFilter;
+                    const expiryMatch = expiryFilter === 'all' || expiry === expiryFilter;
+                    const searchMatch = domain.includes(searchText);
+                    
+                    if (statusMatch && expiryMatch && searchMatch) {
+                        row.classList.remove('hidden');
+                        visibleCount++;
+                    } else {
+                        row.classList.add('hidden');
+                    }
+                });
+                
+                // "Keine Ergebnisse" anzeigen, wenn gefilterte Liste leer ist
+                if (visibleCount === 0) {
+                    document.getElementById('no-results').classList.remove('hidden');
+                } else {
+                    document.getElementById('no-results').classList.add('hidden');
+                }
+            }
+            
+            // Ergebnistabelle sortieren
+            let lastSortColumn = 'domain';
+            let ascending = true;
+            
+            function sortResultsTable(column) {
+                const tbody = document.getElementById('results-body');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                
+                // Klicken auf dieselbe Spalte kehrt die Sortierrichtung um
+                if (column === lastSortColumn) {
+                    ascending = !ascending;
+                } else {
+                    ascending = true;
+                }
+                
+                // Sortierung durchführen
+                rows.sort((a, b) => {
+                    const aValue = a.querySelector(`td:nth-child(${getColumnIndex(column)})`).dataset.value;
+                    const bValue = b.querySelector(`td:nth-child(${getColumnIndex(column)})`).dataset.value;
+                    
+                    // Numerische Sortierung für Tage
+                    if (column === 'days') {
+                        return ascending ? 
+                            parseInt(aValue) - parseInt(bValue) : 
+                            parseInt(bValue) - parseInt(aValue);
+                    }
+                    
+                    // String-Sortierung für alles andere
+                    return ascending ? 
+                        aValue.localeCompare(bValue) : 
+                        bValue.localeCompare(aValue);
+                });
+                
+                // DOM aktualisieren
+                tbody.innerHTML = '';
+                rows.forEach(row => tbody.appendChild(row));
+                
+                // Sortieranzeigestatus aktualisieren
+                updateSortIndicators(column, ascending);
+                
+                // Speichern des letzten Sortierspalte
+                lastSortColumn = column;
+            }
+            
+            // Hilfsfunktion: Spaltenindex ermitteln
+            function getColumnIndex(column) {
+                const columns = {
+                    'domain': 1,
+                    'status': 2,
+                    'hostname': 3,
+                    'chain': 4,
+                    'days': 5,
+                    'common_name': 6
+                };
+                return columns[column] || 1;
+            }
+            
+            // Sortieranzeigestatus aktualisieren
+            function updateSortIndicators(column, ascending) {
+                // Entferne alle bestehenden Sortiersymbole
+                document.querySelectorAll('th.sortable').forEach(th => {
+                    th.classList.remove('sort-asc', 'sort-desc');
+                });
+                
+                // Setze das neue Sortiersymbol
+                const th = document.querySelector(`th[data-sort="${column}"]`);
+                if (th) {
+                    th.classList.add(ascending ? 'sort-asc' : 'sort-desc');
+                }
+            }
+            
+            // Detailanzeige eines Ergebnisses
+            function showResultDetails(result) {
+                const modal = document.getElementById('result-modal');
+                const content = document.getElementById('modal-content');
+                
+                // Detailansicht erstellen
+                content.innerHTML = `
+                    <div class="detail-grid">
+                        <div class="detail-section">
+                            <h3>Grundinformationen</h3>
+                            <div class="detail-item">
+                                <div class="detail-label">URL:</div>
+                                <div class="detail-value"><a href="${result.url}" target="_blank">${result.url}</a></div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Hostname:</div>
+                                <div class="detail-value">${result.hostname || 'N/A'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Port:</div>
+                                <div class="detail-value">${result.port || '443'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Geprüft am:</div>
+                                <div class="detail-value">${new Date(result.timestamp).toLocaleString()}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="detail-section">
+                            <h3>Zertifikatsinformationen</h3>
+                            <div class="detail-item">
+                                <div class="detail-label">Seriennummer:</div>
+                                <div class="detail-value monospace">${result.serial || 'N/A'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Common Name:</div>
+                                <div class="detail-value">${result.common_name || 'N/A'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Gültig bis:</div>
+                                <div class="detail-value">${result.not_after || 'N/A'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Verbleibende Tage:</div>
+                                <div class="detail-value ${getExpiryClass(result.days_left)}">
+                                    ${result.days_left !== undefined ? result.days_left : '?'} 
+                                    ${result.expiry_status ? `(${result.expiry_status})` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="detail-section">
+                            <h3>Validierungsergebnisse</h3>
+                            <div class="detail-item">
+                                <div class="detail-label">Hostname-Validierung:</div>
+                                <div class="detail-value">
+                                    <span class="status-icon ${result.hostname_valid ? 'success' : 'error'}">
+                                        ${result.hostname_valid ? '✓' : '✗'}
+                                    </span>
+                                    ${result.hostname_valid ? 'Gültig' : 'Ungültig'}
+                                    ${result.wildcard_cert ? ' (Wildcard-Zertifikat)' : ''}
+                                </div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Certificate Chain:</div>
+                                <div class="detail-value">
+                                    <span class="status-icon ${result.chain_valid ? 'success' : 'error'}">
+                                        ${result.chain_valid ? '✓' : '✗'}
+                                    </span>
+                                    ${result.chain_valid ? 'Gültig' : 'Ungültig'}
+                                    ${result.chain_error ? `<div class="error-detail">${result.chain_error}</div>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="detail-section">
+                            <h3>Subject Alternative Names (SANs)</h3>
+                            <div class="sans-list">
+                                ${result.sans && result.sans.length > 0 ? 
+                                    result.sans.map(san => `<div class="sans-item">${san}</div>`).join('') : 
+                                    '<div class="sans-item none">Keine SANs vorhanden</div>'}
+                            </div>
+                        </div>
+                        
+                        ${result.redirects && result.redirects.length > 0 ? `
+                            <div class="detail-section redirects">
+                                <h3>HTTP-Weiterleitungen</h3>
+                                <div class="redirects-list">
+                                    ${result.redirects.map(redirect => `
+                                        <div class="redirect-item">
+                                            <div>
+                                                <span class="redirect-status status-${redirect.status}">
+                                                    ${redirect.status} ${redirect.reason}
+                                                </span>
+                                                <span class="redirect-url">${redirect.from}</span>
+                                            </div>
+                                            <div class="redirect-arrow">↓</div>
+                                            <div class="redirect-url">${redirect.to}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                        
+                        ${result.errors && result.errors.length > 0 ? `
+                            <div class="detail-section errors">
+                                <h3>Fehler</h3>
+                                <div class="errors-list">
+                                    ${result.errors.map(error => `
+                                        <div class="error-item">${error}</div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+                
+                // Modal anzeigen
+                modal.classList.remove('hidden');
+                
+                // Schließen-Button
+                const closeButton = modal.querySelector('.close-modal');
+                closeButton.onclick = function() {
+                    modal.classList.add('hidden');
+                };
+                
+                // Schließen bei Klick außerhalb
+                window.onclick = function(event) {
+                    if (event.target === modal) {
+                        modal.classList.add('hidden');
+                    }
+                };
+            }
+            
+            // Hilfsfunktion: CSS-Klasse für Ablaufstatus
+            function getExpiryClass(days) {
+                if (days === undefined || days === null) return 'unknown';
+                if (days < 0) return 'expired';
+                if (days <= 30) return 'critical';
+                if (days <= 90) return 'warning';
+                return 'ok';
+            }
+            
+            // Zusammenfassungsansicht umschalten
+            function toggleSummaryView() {
+                if (batchSummary.classList.contains('hidden')) {
+                    batchSummary.classList.remove('hidden');
+                    document.getElementById('show-summary').textContent = 'Zusammenfassung ausblenden';
+                } else {
+                    batchSummary.classList.add('hidden');
+                    document.getElementById('show-summary').textContent = 'Zusammenfassung anzeigen';
+                }
+            }
+            
+            // Fehlermeldung anzeigen
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorContainer.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

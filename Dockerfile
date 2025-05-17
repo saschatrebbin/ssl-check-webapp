@@ -31,10 +31,13 @@ RUN apt-get update && apt-get install -y \
 COPY --from=builder /python-packages /usr/local/lib/python3.9/site-packages/
 
 # Anwendungsverzeichnisse erstellen
-RUN mkdir -p /app/static/css /app/static/js /app/views
+RUN mkdir -p /app/static/css /app/static/js /app/views /app/db /app/services /app/utils
 
 # Anwendungscode kopieren
-COPY app.py ssl_checker.py /app/
+COPY app.py /app/
+COPY db/ /app/db/
+COPY services/ /app/services/
+COPY utils/ /app/utils/
 COPY static/ /app/static/
 COPY views/ /app/views/
 
@@ -43,4 +46,3 @@ EXPOSE 8080
 
 # Server starten
 CMD ["python", "app.py"]
-
